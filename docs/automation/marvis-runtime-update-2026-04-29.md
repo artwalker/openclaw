@@ -162,6 +162,7 @@ bash scripts/axiom.sh preflight
 bash scripts/axiom.sh regime ZBTUSDT
 bash scripts/axiom.sh account
 bash scripts/axiom.sh positions
+bash scripts/axiom.sh execute ZBTUSDT open_long 3 12 0.1200 0.2000 79 "smoke test low confidence should be rejected before any exchange order"
 ```
 
 Observed state:
@@ -171,6 +172,8 @@ preflight: ok
 account: ok
 positions: ok
 ZBTUSDT regime: MIXED - 4h above EMA50, 1h below EMA50
+execute smoke: rejected by confidence gate, NANO requires confidence >= 80
+positions after execute smoke: none
 ```
 
 No real order was submitted.
