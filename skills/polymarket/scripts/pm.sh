@@ -439,6 +439,31 @@ bird_query_json() {
     }' 2>/dev/null || ${JQ} -n --arg query "${query}" '{query: $query, ok: false, error: "bird returned non-json"}'
 }
 
+inspect_candidate_json() {
+  local slug="$1"
+  local reason="$2"
+  if [[ -z "${slug}" || "${slug}" == "null" ]]; then
+    ${JQ} -n --arg reason "${reason}" '{ok: false, candidate_reason: $reason, error: "missing slug"}'
+    return
+  fi
+
+  local raw
+  raw=$(cmd_inspect "${slug}" 2>&1) || {
+    ${JQ} -n --arg slug "${slug}" --arg reason "${reason}" --arg error "${raw}" \
+      '{ok: false, slug: $slug, candidate_reason: $reason, error: $error}'
+    return
+  }
+  if [[ -z "${raw//[[:space:]]/}" ]]; then
+    ${JQ} -n --arg slug "${slug}" --arg reason "${reason}" \
+      '{ok: false, slug: $slug, candidate_reason: $reason, error: "inspect returned empty output"}'
+    return
+  fi
+
+  printf '%s' "${raw}" | ${JQ} --arg reason "${reason}" '. + {ok: true, candidate_reason: $reason}' \
+    2>/dev/null || ${JQ} -n --arg slug "${slug}" --arg reason "${reason}" \
+      '{ok: false, slug: $slug, candidate_reason: $reason, error: "inspect returned non-json"}'
+}
+
 cmd_scan_context() {
   local limit="${1:-60}"
   need_jq
@@ -478,16 +503,32 @@ cmd_scan_context() {
     ${JQ} -r '.[:8][]? | (.question // .slug // empty)' "${tmpdir}/candidates.json"
   } | sed '/^[[:space:]]*$/d' | awk '!seen[$0]++' | head -8 >"${tmpdir}/queries.txt"
 
-  printf '[' >"${tmpdir}/bird.json"
-  local first=1 query
+  ${JQ} -r '.[:6][]? | [.slug, .candidate_reason] | @tsv' "${tmpdir}/candidates.json" >"${tmpdir}/inspect-targets.tsv"
+
+  mkdir -p "${tmpdir}/inspections"
+  local inspect_index=0 slug reason
+  while IFS=$'\t' read -r slug reason; do
+    inspect_candidate_json "${slug}" "${reason}" >"${tmpdir}/inspections/${inspect_index}.json"
+    inspect_index=$((inspect_index + 1))
+  done <"${tmpdir}/inspect-targets.tsv"
+  if [[ "${inspect_index}" -gt 0 ]]; then
+    ${JQ} -s '.' "${tmpdir}"/inspections/*.json >"${tmpdir}/inspections.json"
+  else
+    printf '[]' >"${tmpdir}/inspections.json"
+  fi
+
+  mkdir -p "${tmpdir}/bird"
+  local bird_index=0
+  local query
   while IFS= read -r query; do
-    if [[ "${first}" -eq 0 ]]; then
-      printf ',' >>"${tmpdir}/bird.json"
-    fi
-    first=0
-    bird_query_json "${query}" >>"${tmpdir}/bird.json"
+    bird_query_json "${query}" >"${tmpdir}/bird/${bird_index}.json"
+    bird_index=$((bird_index + 1))
   done <"${tmpdir}/queries.txt"
-  printf ']' >>"${tmpdir}/bird.json"
+  if [[ "${bird_index}" -gt 0 ]]; then
+    ${JQ} -s '.' "${tmpdir}"/bird/*.json >"${tmpdir}/bird.json"
+  else
+    printf '[]' >"${tmpdir}/bird.json"
+  fi
 
   ${JQ} -n \
     --slurpfile preflight "${tmpdir}/preflight.json" \
@@ -497,6 +538,7 @@ cmd_scan_context() {
     --slurpfile portfolio "${tmpdir}/portfolio.json" \
     --slurpfile markets "${tmpdir}/markets.json" \
     --slurpfile candidates "${tmpdir}/candidates.json" \
+    --slurpfile inspections "${tmpdir}/inspections.json" \
     --slurpfile bird "${tmpdir}/bird.json" \
     '{
       preflight: $preflight[0],
@@ -506,6 +548,7 @@ cmd_scan_context() {
       portfolio: $portfolio[0],
       markets: $markets[0],
       candidate_markets: $candidates[0],
+      candidate_inspections: $inspections[0],
       bird_queries: $bird[0]
     }'
 }

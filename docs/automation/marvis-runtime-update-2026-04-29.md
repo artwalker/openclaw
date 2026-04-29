@@ -375,6 +375,12 @@ eventful non-extreme markets. This prevents the trader from spending every scan
 only on nearly resolved 0.00/1.00 markets while still preserving high-volume
 context.
 
+`scan-context` also returns `candidate_inspections` for up to six
+`candidate_markets`. This forces the inspect stage into the baseline scan:
+normalized market status, token IDs, executable CLOB buy/sell prices, liquidity,
+spread, and resolution text are available before the model decides whether a
+candidate has a real edge.
+
 Manual validation after the fix:
 
 ```text
@@ -384,8 +390,11 @@ message tool calls: none
 tool failures: 0
 open orders after scan: none
 open positions after scan: unchanged, AITC YES 7.0093 shares
-full scan: scan-context 30
-fresh Bird/X context: present for the AITC open position and top market candidates
+full scan: scan-context 60
+candidate pool: 12 mixed markets
+candidate inspections: 6/6 ok, executable CLOB prices present
+fresh Bird/X context: 8/8 ok for the AITC open position and top market candidates
+cron run: status=ok, summary=NO_REPLY, delivered=false
 ```
 
 Final cron state after validation:
