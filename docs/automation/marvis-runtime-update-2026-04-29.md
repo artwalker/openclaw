@@ -18,12 +18,12 @@ Axiom repository:
 ```text
 /root/projects/axiom
 branch: main
-status: clean after commit
-head: c546f0b5 chore: remove stale frontend artifacts
-ahead: origin/main by 4 commits
+status: clean after commits
+head: 36978455 feat(cli): add axiomctl runtime client
+ahead: origin/main by 5 commits
 ```
 
-The latest commit removed stale frontend build/deploy surfaces and tracked local runtime artifacts. It did not touch the Marvis execution path, Binance adapter, order sync, or risk logic.
+The latest commits removed stale frontend build/deploy surfaces and added `cmd/axiomctl`, a source-controlled HTTP CLI for Marvis/OpenClaw automation. They did not change the live Axiom service binary, Binance adapter, order sync, or risk logic.
 
 Validation before the commit:
 
@@ -31,6 +31,16 @@ Validation before the commit:
 go test ./...
 go build -o /tmp/axiom-cleanup-build
 git diff --check
+```
+
+All passed.
+
+Additional validation for `cmd/axiomctl`:
+
+```bash
+go test ./cmd/axiomctl
+go build -o /tmp/axiomctl ./cmd/axiomctl
+/tmp/axiomctl help
 ```
 
 All passed.
@@ -124,12 +134,53 @@ DEXEUSDT: TREND_DOWN - 4h and 1h both below EMA50 with ADX > 20
 BTCUSDT: MEAN_REVERSION
 ```
 
+## Axiomctl VPS adoption
+
+`axiomctl` was built from Axiom commit `36978455` and installed on the VPS:
+
+```text
+/usr/local/bin/axiomctl
+```
+
+The VPS Axiom workspace helper now prefers `axiomctl` when it is present and executable, then falls back to the older shell/Node implementation if the binary is unavailable:
+
+```text
+/root/.openclaw/workspace/skills/axiom-trade/scripts/axiom.sh
+```
+
+Backup created before editing:
+
+```text
+/root/.openclaw/workspace/skills/axiom-trade/scripts/axiom.sh.bak-20260429-axiomctl
+```
+
+Smoke checks through the normal skill helper:
+
+```bash
+cd /root/.openclaw/workspace/skills/axiom-trade
+bash scripts/axiom.sh preflight
+bash scripts/axiom.sh regime ZBTUSDT
+bash scripts/axiom.sh account
+bash scripts/axiom.sh positions
+```
+
+Observed state:
+
+```text
+preflight: ok
+account: ok
+positions: ok
+ZBTUSDT regime: MIXED - 4h above EMA50, 1h below EMA50
+```
+
+No real order was submitted.
+
 ## Resume checklist
 
 Before enabling market scans again:
 
 1. Run Axiom helper checks again and confirm positions are still fresh.
-2. Confirm `market-summary.mjs` still returns `MIXED` for conflicting 4h/1h trends.
+2. Confirm `bash scripts/axiom.sh regime ZBTUSDT` still routes through `axiomctl` and returns `MIXED` for conflicting 4h/1h trends.
 3. Confirm Polymarket V2 helper still passes `preflight`, `balance`, `positions`, and `orders`.
 4. Re-enable only the two market-scan jobs:
 
