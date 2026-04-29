@@ -19,11 +19,11 @@ Axiom repository:
 /root/projects/axiom
 branch: main
 status: clean after commits
-head: 36978455 feat(cli): add axiomctl runtime client
-ahead: origin/main by 5 commits
+head: 08d856c3 fix(api): classify risk-control trade blocks
+ahead: origin/main by 6 commits
 ```
 
-The latest commits removed stale frontend build/deploy surfaces and added `cmd/axiomctl`, a source-controlled HTTP CLI for Marvis/OpenClaw automation. They did not change the live Axiom service binary, Binance adapter, order sync, or risk logic.
+The latest commits removed stale frontend build/deploy surfaces, added `cmd/axiomctl`, and changed risk-control trade blocks from HTTP 500 runtime errors to structured HTTP 422 responses. They did not change Binance adapter, order sync, or order placement logic.
 
 Validation before the commit:
 
@@ -39,6 +39,7 @@ Additional validation for `cmd/axiomctl`:
 
 ```bash
 go test ./cmd/axiomctl
+go test ./cmd/axiomctl ./api/handlers ./trader
 go build -o /tmp/axiomctl ./cmd/axiomctl
 /tmp/axiomctl help
 ```
@@ -136,10 +137,23 @@ BTCUSDT: MEAN_REVERSION
 
 ## Axiomctl VPS adoption
 
-`axiomctl` was built from Axiom commit `36978455` and installed on the VPS:
+`axiomctl` was built from Axiom commit `08d856c3` and installed on the VPS:
 
 ```text
 /usr/local/bin/axiomctl
+```
+
+The Axiom service binary was also rebuilt from the same commit and installed at:
+
+```text
+/opt/axiom/axiom
+```
+
+Backup files:
+
+```text
+/opt/axiom/backups/axiom.bak-20260429-risk-response
+/usr/local/bin/axiomctl.bak-20260429-risk-response
 ```
 
 The VPS Axiom workspace helper now prefers `axiomctl` when it is present and executable, then falls back to the older shell/Node implementation if the binary is unavailable:
@@ -172,7 +186,7 @@ preflight: ok
 account: ok
 positions: ok
 ZBTUSDT regime: MIXED - 4h above EMA50, 1h below EMA50
-execute smoke: rejected by confidence gate, NANO requires confidence >= 80
+execute smoke: HTTP 422, status=blocked, code=risk_control, order_placed=false
 positions after execute smoke: none
 ```
 
