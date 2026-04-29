@@ -153,3 +153,43 @@ Polymarket Market Scan enabled=true, sessionTarget=session:polymarket-trader
 ```
 
 Do not enable duplicate evening Polymarket scans.
+
+## Polymarket read-only check
+
+After pausing market-scan cron, the Polymarket helper was checked with read-only commands:
+
+```bash
+cd /root/.openclaw/workspace/skills/polymarket
+bash scripts/pm.sh preflight
+bash scripts/pm.sh balance
+bash scripts/pm.sh positions
+bash scripts/pm.sh orders
+```
+
+Observed state:
+
+```text
+preflight: ok
+clob_client: v2
+collateral: pUSD
+pUSD balance: 5.626627
+legacy USDC.e: 0
+open orders: none
+open positions: 1
+```
+
+Current open position at check time:
+
+```text
+Market: Will the All India Trinamool Congress (AITC) win the most seats in the 2026 West Bengal Legislative Assembly election?
+Outcome: Yes
+Size: 7.0093
+Average price: 0.4279
+Current price: 0.4845
+Current value: 3.396
+Cash PnL: 0.396
+Percent PnL: 13.2
+End date: 2026-04-29
+```
+
+The helper reported `cli_version: polymarket 0.1.4` while also reporting `clob_client: v2`. Treat the package version string as the installed wrapper version, not proof of CLOB v1 usage.
