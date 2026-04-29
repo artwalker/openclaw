@@ -399,6 +399,21 @@ Polymarket Market Scan:
   model: xiaomi-coding/mimo-v2.5-pro
 ```
 
+## Axiom Fresh X Context
+
+The Axiom trader now follows the same fresh-context pattern used for Polymarket.
+`skills/axiom-trade/scripts/axiom.sh scan-context 20` bundles Axiom preflight,
+account, positions, screener, BTC/ETH regime anchors, top candidate market
+summaries, and targeted `bird search --json` results. The Axiom cron prompt
+requires this command as the first tool command for each autonomous scan so the
+persistent trader session cannot reuse stale X findings as fresh evidence.
+
+Bird/X is supporting evidence only. New entries still require an Axiom-native
+thesis from market structure, liquidity, volatility, positioning, R/R, account
+tier confidence, and service-side risk controls. If Bird/X is unavailable, new
+entries are blocked; emergency close/reduce remains allowed when Axiom
+position/price/risk evidence itself justifies action.
+
 ## Model policy
 
 All agent cron jobs now use MiMo as the primary model:
