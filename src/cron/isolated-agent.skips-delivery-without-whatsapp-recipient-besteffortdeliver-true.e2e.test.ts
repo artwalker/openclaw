@@ -147,7 +147,7 @@ describe("runCronIsolatedAgentTurn", () => {
     await withTempCronHome(async (home) => {
       const storePath = await writeSessionStore(home, { lastProvider: "webchat", lastTo: "" });
       const deps = createCliDeps();
-      mockAgentPayloads([{ text: "No material change.\n\nNO_REPLY" }]);
+      mockAgentPayloads([{ text: "No material change.\n\nNO_REPLY\n\nIgnored details" }]);
 
       const res = await runTelegramAnnounceTurn({
         home,
@@ -157,6 +157,8 @@ describe("runCronIsolatedAgentTurn", () => {
       });
 
       expect(res.status).toBe("ok");
+      expect(res.summary).toBe("NO_REPLY");
+      expect(res.outputText).toBe("NO_REPLY");
       expect(res.delivered).not.toBe(true);
       expect(runSubagentAnnounceFlow).not.toHaveBeenCalled();
       expect(deps.sendMessageTelegram).not.toHaveBeenCalled();

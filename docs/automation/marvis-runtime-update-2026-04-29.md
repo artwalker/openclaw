@@ -65,7 +65,7 @@ Polymarket: session:polymarket-trader
 Delivery modes:
 
 ```text
-Axiom:      announce -> telegram:8436785488
+Axiom:      announce -> telegram:8436785488; no-action runs are normalized to NO_REPLY and not delivered
 Polymarket: none; the skill may call the message tool only for a real trade, material position risk, or operational blocker
 ```
 
@@ -111,12 +111,62 @@ Follow-up manual scan after prompt cleanup:
 
 ```text
 model: xiaomi-coding/mimo-v2.5-pro
-final output: NO_REPLY
+runtime summary: NO_REPLY
 tool failures: 0
 positions after scan: none
 ```
 
-The first MiMo no-action retest wrote a skip summary plus `NO_REPLY`. To fix the root cause, the VPS Axiom skill and cron prompt now classify below-threshold candidates, watchlist-only decisions, normal market regime, healthy account state, and zero positions as no-action outcomes that must return exactly `NO_REPLY`.
+The first MiMo no-action retest wrote a skip summary plus `NO_REPLY`. The Axiom skill and cron prompt classify below-threshold candidates, watchlist-only decisions, normal market regime, healthy account state, and zero positions as no-action outcomes that must return exactly `NO_REPLY`. Because model adherence is not a sufficient runtime guarantee, OpenClaw cron delivery was also patched to normalize any final output containing the `NO_REPLY` sentinel into a fully silent result.
+
+## OpenClaw cron silent-output fix
+
+Local source changed:
+
+```text
+src/cron/isolated-agent/run.ts
+src/cron/isolated-agent.skips-delivery-without-whatsapp-recipient-besteffortdeliver-true.e2e.test.ts
+CHANGELOG.md
+```
+
+Behavior:
+
+- If a cron final output contains `NO_REPLY`, the isolated-agent result now stores `summary=NO_REPLY` and `outputText=NO_REPLY`.
+- Announce delivery is skipped for the normalized silent result.
+- The regression test covers a final payload like `analysis + NO_REPLY + extra text` and asserts the stored result is exactly `NO_REPLY` with no delivery.
+
+Local validation:
+
+```bash
+pnpm test src/cron/isolated-agent/run.skill-filter.test.ts
+pnpm test:e2e src/cron/isolated-agent.skips-delivery-without-whatsapp-recipient-besteffortdeliver-true.e2e.test.ts
+```
+
+Both passed.
+
+VPS package-installed OpenClaw hot patches:
+
+```text
+/usr/lib/node_modules/openclaw/dist/run-delivery.runtime-Bf3jOWmV.js
+/usr/lib/node_modules/openclaw/dist/server.impl-CnVVyYzF.js
+```
+
+Backups:
+
+```text
+/usr/lib/node_modules/openclaw/dist/run-delivery.runtime-Bf3jOWmV.js.bak-mimo-no-reply-summary-20260429-083646
+/usr/lib/node_modules/openclaw/dist/server.impl-CnVVyYzF.js.bak-cron-silent-summary-20260429-090754
+```
+
+VPS validation after restarting `marvis.service`:
+
+```text
+manual run 1777453801267: summary=NO_REPLY, delivered=false, deliveryStatus=not-requested, model=mimo-v2.5-pro
+manual run 1777454333328: summary=NO_REPLY, delivered=false, deliveryStatus=not-requested, model=mimo-v2.5-pro
+manual announce run 1777454729252: summary=NO_REPLY, delivered=false, deliveryStatus=not-delivered, model=mimo-v2.5-pro
+scheduled announce run 1777455000017: summary=NO_REPLY, delivered=false, deliveryStatus=not-delivered, model=mimo-v2.5-pro
+```
+
+The model still may write internal analysis plus `NO_REPLY` into the persistent session transcript. The runtime-visible cron result and Telegram delivery path are the source of truth for user notification behavior.
 
 ## Axiom skill hotfix
 
@@ -314,6 +364,7 @@ Axiom Market Scan:
   sessionTarget: session:axiom-trader
   delivery: announce -> telegram:8436785488
   model: xiaomi-coding/mimo-v2.5-pro
+  last scheduled announce validation: summary=NO_REPLY, delivered=false
 
 Polymarket Market Scan:
   enabled: true

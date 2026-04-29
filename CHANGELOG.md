@@ -31,6 +31,7 @@ Docs: https://docs.openclaw.ai
 
 ### Fixes
 
+- Cron: normalize final outputs that contain a `NO_REPLY` sentinel to a fully silent cron result before run summaries or delivery, so no-action scheduled scans do not leak analysis text or notify recipients.
 - Security/Agents: cap embedded Pi runner outer retry loop with a higher profile-aware dynamic limit (32-160 attempts) and return an explicit `retry_limit` error payload when retries never converge, preventing unbounded internal retry cycles (`GHSA-76m6-pj3w-v7mf`).
 - Telegram: detect duplicate bot-token ownership across Telegram accounts at startup/status time, mark secondary accounts as not configured with an explicit fix message, and block duplicate account startup before polling to avoid endless `getUpdates` conflict loops.
 - Agents/Tool images: include source filenames in `agents/tool-images` resize logs so compression events can be traced back to specific files.

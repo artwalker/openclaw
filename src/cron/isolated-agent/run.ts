@@ -101,6 +101,10 @@ function resolveCronDeliveryBestEffort(job: CronJob): boolean {
   return false;
 }
 
+function hasSilentReplyTokenText(text: string | undefined): boolean {
+  return typeof text === "string" && /\bNO_REPLY\b/i.test(text);
+}
+
 async function resolveCronAnnounceSessionKey(params: {
   cfg: OpenClawConfig;
   agentId: string;
@@ -562,6 +566,14 @@ export async function runCronIsolatedAgentTurn(params: {
   let summary = pickSummaryFromPayloads(payloads) ?? pickSummaryFromOutput(firstText);
   let outputText = pickLastNonEmptyTextFromPayloads(payloads);
   let synthesizedText = outputText?.trim() || summary?.trim() || undefined;
+  const normalizeSilentReplyOutcome = (): void => {
+    summary = SILENT_REPLY_TOKEN;
+    outputText = SILENT_REPLY_TOKEN;
+    synthesizedText = SILENT_REPLY_TOKEN;
+  };
+  if (hasSilentReplyTokenText(synthesizedText)) {
+    normalizeSilentReplyOutcome();
+  }
   const deliveryPayload = pickLastDeliverablePayload(payloads);
   let deliveryPayloads =
     deliveryPayload !== undefined
@@ -724,7 +736,8 @@ export async function runCronIsolatedAgentTurn(params: {
         // suppress stale parent text like "on it, pulling everything together".
         return withRunSession({ status: "ok", summary, outputText, ...telemetry });
       }
-      if (isSilentReplyText(synthesizedText, SILENT_REPLY_TOKEN)) {
+      if (hasSilentReplyTokenText(synthesizedText)) {
+        normalizeSilentReplyOutcome();
         return withRunSession({ status: "ok", summary, outputText, ...telemetry });
       }
       try {
