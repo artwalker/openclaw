@@ -3,7 +3,7 @@ import {
   listDescendantRunsForRequester,
 } from "../../agents/subagent-registry.js";
 import { readLatestAssistantReply } from "../../agents/tools/agent-step.js";
-import { SILENT_REPLY_TOKEN } from "../../auto-reply/tokens.js";
+import { isSilentReplyText, SILENT_REPLY_TOKEN } from "../../auto-reply/tokens.js";
 
 const CRON_SUBAGENT_WAIT_POLL_MS = 500;
 const CRON_SUBAGENT_WAIT_MIN_MS = 30_000;
@@ -89,7 +89,7 @@ export async function readDescendantSubagentFallbackReply(params: {
     .slice(-4);
   for (const entry of latestRuns) {
     const reply = (await readLatestAssistantReply({ sessionKey: entry.childSessionKey }))?.trim();
-    if (!reply || reply.toUpperCase() === SILENT_REPLY_TOKEN.toUpperCase()) {
+    if (!reply || isSilentReplyText(reply, SILENT_REPLY_TOKEN)) {
       continue;
     }
     replies.push(reply);
@@ -130,7 +130,7 @@ export async function waitForDescendantSubagentSummary(params: {
     const latest = (await readLatestAssistantReply({ sessionKey: params.sessionKey }))?.trim();
     if (
       latest &&
-      latest.toUpperCase() !== SILENT_REPLY_TOKEN.toUpperCase() &&
+      !isSilentReplyText(latest, SILENT_REPLY_TOKEN) &&
       (latest !== initialReply || !isLikelyInterimCronMessage(latest))
     ) {
       return latest;
@@ -143,7 +143,7 @@ export async function waitForDescendantSubagentSummary(params: {
   const latest = (await readLatestAssistantReply({ sessionKey: params.sessionKey }))?.trim();
   if (
     latest &&
-    latest.toUpperCase() !== SILENT_REPLY_TOKEN.toUpperCase() &&
+    !isSilentReplyText(latest, SILENT_REPLY_TOKEN) &&
     (latest !== initialReply || !isLikelyInterimCronMessage(latest))
   ) {
     return latest;

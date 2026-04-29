@@ -32,7 +32,7 @@ import {
   normalizeVerboseLevel,
   supportsXHighThinking,
 } from "../../auto-reply/thinking.js";
-import { SILENT_REPLY_TOKEN } from "../../auto-reply/tokens.js";
+import { isSilentReplyText, SILENT_REPLY_TOKEN } from "../../auto-reply/tokens.js";
 import { createOutboundSendDeps, type CliDeps } from "../../cli/outbound-send-deps.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import {
@@ -718,13 +718,13 @@ export async function runCronIsolatedAgentTurn(params: {
         (hadActiveDescendants || expectedSubagentFollowup) &&
         synthesizedText.trim() === initialSynthesizedText &&
         isLikelyInterimCronMessage(initialSynthesizedText) &&
-        initialSynthesizedText.toUpperCase() !== SILENT_REPLY_TOKEN.toUpperCase()
+        !isSilentReplyText(initialSynthesizedText, SILENT_REPLY_TOKEN)
       ) {
         // Descendants existed but no post-orchestration synthesis arrived, so
         // suppress stale parent text like "on it, pulling everything together".
         return withRunSession({ status: "ok", summary, outputText, ...telemetry });
       }
-      if (synthesizedText.toUpperCase() === SILENT_REPLY_TOKEN.toUpperCase()) {
+      if (isSilentReplyText(synthesizedText, SILENT_REPLY_TOKEN)) {
         return withRunSession({ status: "ok", summary, outputText, ...telemetry });
       }
       try {

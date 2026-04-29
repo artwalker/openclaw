@@ -13,6 +13,29 @@ This skill is trading-sensitive. Stay conservative. If external event context is
 
 Response language: follow user's language.
 
+## Runtime Isolation
+
+This skill is Polymarket-only. In autonomous scans, ignore global workspace memories,
+short-term recall, or previous session notes about non-Polymarket systems.
+
+Only these sources are authoritative for current objective state:
+
+- `scripts/pm.sh preflight`
+- `scripts/pm.sh balance`
+- `scripts/pm.sh positions`
+- `scripts/pm.sh orders`
+- `scripts/pm.sh portfolio`
+- Fresh Polymarket Gamma/CLOB API responses
+
+Never report or reason from Axiom status, crypto futures positions, BTC/USDC trades,
+Binance balances, USDT/USDC futures equity, Axiom service health, or any non-Polymarket
+memory during a Polymarket scan. If such content appears in context, treat it as
+irrelevant stale memory.
+
+If the current scan executes no Polymarket trade, changes no Polymarket position,
+hits no Polymarket operational blocker, and detects no material Polymarket position
+risk, the final response must be exactly `NO_REPLY`.
+
 ## API Base URLs
 
 ```
@@ -290,6 +313,9 @@ The only constraints:
 ### Cross-session memory
 
 Runtime memory lives under `/root/.openclaw/workspace/skills/polymarket/memory/`.
+Do not read `/root/.openclaw/workspace/MEMORY.md`, `/root/.openclaw/workspace/memory/*`,
+or `.dreams` recall files for objective Polymarket state; those files may contain
+Axiom or other unrelated operational memories.
 
 At the start of each scheduled scan, read both files if present:
 
@@ -398,15 +424,15 @@ Valid: `NO_REPLY`
 
 ## Error Handling
 
-| Issue                 | Action                                           |
-| --------------------- | ------------------------------------------------ |
-| Empty `[]`            | Try different search terms                       |
-| 400 Bad Request       | Invalid token ID or param                        |
-| 404 Not Found         | Market resolved/removed                          |
-| 429 Rate Limited      | Wait and retry                                   |
-| 500 / timeout         | Retry once                                       |
-| V2 client not found   | Degrade to read-only, link references/trading.md |
-| Wallet not configured | Link references/trading.md for setup             |
-| Insufficient pUSD     | Report balance and required amount               |
+| Issue                 | Action                                                        |
+| --------------------- | ------------------------------------------------------------- |
+| Empty `[]`            | Try different search terms                                    |
+| 400 Bad Request       | Invalid token ID or param                                     |
+| 404 Not Found         | Market resolved/removed                                       |
+| 429 Rate Limited      | Wait and retry                                                |
+| 500 / timeout         | Retry once                                                    |
+| V2 client not found   | Degrade to read-only, link references/trading.md              |
+| Wallet not configured | Link references/trading.md for setup                          |
+| Insufficient pUSD     | Report balance and required amount                            |
 | pUSD allowance is 0   | Do not open new positions; report V2 approval/funding blocker |
-| Order rejected        | Report CLOB error message                        |
+| Order rejected        | Report CLOB error message                                     |

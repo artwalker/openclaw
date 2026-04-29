@@ -48,11 +48,11 @@ All passed.
 
 ## VPS cron state
 
-The market-scan cron jobs are intentionally paused for manual debugging:
+The market-scan cron jobs were resumed after manual validation:
 
 ```text
-11fdd602-f6be-4038-aa6b-a689eaf3a978 Axiom Market Scan       enabled=false
-polymarket-market-scan                 Polymarket Market Scan enabled=false
+11fdd602-f6be-4038-aa6b-a689eaf3a978 Axiom Market Scan       enabled=true
+polymarket-market-scan                 Polymarket Market Scan enabled=true
 ```
 
 Their session targets are preserved:
@@ -62,9 +62,16 @@ Axiom:      session:axiom-trader
 Polymarket: session:polymarket-trader
 ```
 
+Delivery modes:
+
+```text
+Axiom:      announce -> telegram:8436785488
+Polymarket: none; the skill may call the message tool only for a real trade, material position risk, or operational blocker
+```
+
 Other jobs, including Bird digests, memory promotion, and daily/weekly review jobs, were not disabled.
 
-Use `ssh -4 vps` and `openclaw cron show <job-id> --json` to confirm before resuming.
+Use `ssh -4 vps` and `openclaw cron show <job-id> --json` to confirm before editing.
 
 ## Manual Axiom debug result
 
@@ -99,6 +106,17 @@ ETH regime: MEAN_REVERSION
 ```
 
 No real order was submitted.
+
+Follow-up manual scan after prompt cleanup:
+
+```text
+model: xiaomi-coding/mimo-v2.5-pro
+final output: NO_REPLY
+tool failures: 0
+positions after scan: none
+```
+
+The first MiMo no-action retest wrote a skip summary plus `NO_REPLY`. To fix the root cause, the VPS Axiom skill and cron prompt now classify below-threshold candidates, watchlist-only decisions, normal market regime, healthy account state, and zero positions as no-action outcomes that must return exactly `NO_REPLY`.
 
 ## Axiom skill hotfix
 
@@ -192,9 +210,9 @@ positions after execute smoke: none
 
 No real order was submitted.
 
-## Resume checklist
+## Future emergency resume checklist
 
-Before enabling market scans again:
+If market scans are paused again for debugging, use this checklist before resuming:
 
 1. Run Axiom helper checks again and confirm positions are still fresh.
 2. Confirm `bash scripts/axiom.sh regime ZBTUSDT` still routes through `axiomctl` and returns `MIXED` for conflicting 4h/1h trends.
@@ -261,3 +279,46 @@ End date: 2026-04-29
 ```
 
 The helper reported `cli_version: polymarket 0.1.4` while also reporting `clob_client: v2`. Treat the package version string as the installed wrapper version, not proof of CLOB v1 usage.
+
+## Polymarket isolation and manual scan result
+
+The first manual Polymarket agent scan after the V2 helper upgrade produced a no-trade report contaminated by stale Axiom/global memory. It mentioned Axiom/BTC/USDC state even though the Polymarket helper state was healthy and unchanged.
+
+Fixes applied:
+
+```text
+skills/polymarket/SKILL.md
+/root/.openclaw/workspace/skills/polymarket/SKILL.md
+polymarket-market-scan cron prompt
+```
+
+The skill and cron prompt now state that Polymarket scans must ignore global workspace memory, short-term recall, Axiom status, crypto futures positions, BTC/USDC trades, Binance balances, USDT/USDC futures equity, Axiom service health, and any non-Polymarket memory. Objective current state may only come from `pm.sh preflight`, `pm.sh balance`, `pm.sh positions`, `pm.sh orders`, `pm.sh portfolio`, and fresh Polymarket Gamma/CLOB API responses.
+
+Manual validation after the fix:
+
+```text
+model: xiaomi-coding/mimo-v2.5-pro
+final output: NO_REPLY
+message tool calls: none
+tool failures: 0
+open orders after scan: none
+open positions after scan: unchanged, AITC YES 7.0093 shares
+```
+
+Final cron state after validation:
+
+```text
+Axiom Market Scan:
+  enabled: true
+  schedule: 0,30 * * * * UTC
+  sessionTarget: session:axiom-trader
+  delivery: announce -> telegram:8436785488
+  model: xiaomi-coding/mimo-v2.5-pro
+
+Polymarket Market Scan:
+  enabled: true
+  schedule: 15,45 * * * * UTC
+  sessionTarget: session:polymarket-trader
+  delivery: none
+  model: xiaomi-coding/mimo-v2.5-pro
+```
