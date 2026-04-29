@@ -367,6 +367,14 @@ X/Bird is now required supporting research for every candidate trade judgment an
 
 `scripts/pm.sh scan-context` now gives the autonomous trader one baseline command for preflight, balance, positions, orders, portfolio, active markets, and targeted Bird/X searches for open positions plus the top market candidates. The cron prompt requires this command every run so the persistent session cannot reuse a previous scan's X results as fresh evidence.
 
+`scan-context` now scans up to 60 active markets and returns `candidate_markets`
+as a mixed edge pool instead of only the highest-volume markets. The pool keeps
+the top hot-volume markets for awareness, then adds balanced-price markets,
+near-event non-extreme markets, liquid longer-horizon non-extreme markets, and
+eventful non-extreme markets. This prevents the trader from spending every scan
+only on nearly resolved 0.00/1.00 markets while still preserving high-volume
+context.
+
 Manual validation after the fix:
 
 ```text

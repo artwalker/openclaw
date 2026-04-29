@@ -26,6 +26,13 @@ real risk/data gate such as unclear resolution, expired trading window, missing
 token IDs, unavailable executable prices, insufficient liquidity, no identifiable
 edge, or safety-limit constraints.
 
+High volume is not the same as edge. In autonomous scans, use
+`scan-context`'s `candidate_markets` field as the mixed edge candidate pool:
+hot-volume markets, balanced-price markets, near-event non-extreme markets,
+liquid longer-horizon markets, and eventful non-extreme markets. Hot markets
+near 0.00/1.00 are useful for awareness but rarely worth risking capital unless
+there is a precise, fresh, independently supported mispricing thesis.
+
 Every candidate judgment and material existing-position risk judgment must include
 targeted `bird search --json` research. X/Twitter can surface injuries, lineup news,
 official statements, political developments, breaking-event confirmation, and
@@ -228,8 +235,8 @@ Scheduled scan / prompt says autonomous trading scan / session key is polymarket
   → V2 client missing or wallet missing? → report only if this is a new operational blocker, otherwise NO_REPLY
   → geoblocked == true? → do not place orders; report once if newly detected, otherwise NO_REPLY
   → pUSD balance or allowance below safety floor? → stop opening new positions and report if newly detected
-  → Use scan-context markets, current portfolio, open orders, and Bird/X results as the baseline
-  → Inspect any candidate with pm.sh inspect before deciding
+  → Use scan-context candidate_markets, markets, current portfolio, open orders, and Bird/X results as the baseline
+  → Inspect up to 6 plausible candidate_markets with pm.sh inspect before deciding
   → Run targeted `bird search --json` research for every candidate being judged
   → Open position exists? → run targeted `bird search --json` research for the position/event before hold/close/reduce judgment
   → bird unavailable? → no new positions; manage existing positions only

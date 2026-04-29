@@ -42,7 +42,7 @@ Commands:
   geoblock                           Check Polymarket geoblock status
   markets                            List active high-volume markets (Gamma API)
   inspect <slug|market_id>           Inspect one market with normalized CLOB prices
-  scan-context [limit]                Full autonomous scan context plus targeted Bird/X searches
+  scan-context [limit]                Full autonomous scan context plus mixed edge candidates and Bird/X searches
 USAGE
   exit 1
 }
@@ -440,7 +440,7 @@ bird_query_json() {
 }
 
 cmd_scan_context() {
-  local limit="${1:-30}"
+  local limit="${1:-60}"
   need_jq
 
   local tmpdir
@@ -454,10 +454,29 @@ cmd_scan_context() {
   cmd_portfolio >"${tmpdir}/portfolio.json"
   cmd_markets "${limit}" >"${tmpdir}/markets.json"
 
+  ${JQ} '
+    def n($v): ($v | tonumber? // 0);
+    def p0: n(.outcome_prices[0]);
+    def p1: n(.outcome_prices[1]);
+    def non_extreme: (p0 >= 0.05 and p0 <= 0.95 and p1 >= 0.05 and p1 <= 0.95);
+    def balanced: (p0 >= 0.12 and p0 <= 0.88 and p1 >= 0.12 and p1 <= 0.88);
+    def with_reason($reason): . + {candidate_reason: $reason};
+    (.[:3] | map(with_reason("hot_volume"))) as $hot
+    | ([.[] | select(balanced) | with_reason("balanced_price")] | .[:5]) as $balanced
+    | ([.[] | select(non_extreme and (.days_to_end != null) and (.days_to_end <= 7)) | with_reason("near_event_non_extreme")] | .[:5]) as $near
+    | ([.[] | select(non_extreme and (.days_to_end != null) and (.days_to_end > 7) and (.days_to_end <= 120) and (.liquidity >= 100000)) | with_reason("liquid_horizon_non_extreme")] | .[:5]) as $horizon
+    | ([.[] | select(non_extreme and ((.question // "") | test("Fed|Iran|Trump|Bitcoin|election|World Cup|NBA|Arsenal|Atletico|peace|military|tariff|crypto"; "i"))) | with_reason("eventful_non_extreme")] | .[:5]) as $eventful
+    | ($hot + $balanced + $near + $horizon + $eventful)
+    | reduce .[] as $m ([];
+        if any(.[]; .slug == $m.slug) then . else . + [$m] end
+      )
+    | .[:12]
+  ' "${tmpdir}/markets.json" >"${tmpdir}/candidates.json"
+
   {
     ${JQ} -r '.[]? | (.title // .question // .slug // empty)' "${tmpdir}/positions.json"
-    ${JQ} -r '.[:3][]? | (.question // .slug // empty)' "${tmpdir}/markets.json"
-  } | sed '/^[[:space:]]*$/d' | awk '!seen[$0]++' | head -4 >"${tmpdir}/queries.txt"
+    ${JQ} -r '.[:8][]? | (.question // .slug // empty)' "${tmpdir}/candidates.json"
+  } | sed '/^[[:space:]]*$/d' | awk '!seen[$0]++' | head -8 >"${tmpdir}/queries.txt"
 
   printf '[' >"${tmpdir}/bird.json"
   local first=1 query
@@ -477,6 +496,7 @@ cmd_scan_context() {
     --slurpfile orders "${tmpdir}/orders.json" \
     --slurpfile portfolio "${tmpdir}/portfolio.json" \
     --slurpfile markets "${tmpdir}/markets.json" \
+    --slurpfile candidates "${tmpdir}/candidates.json" \
     --slurpfile bird "${tmpdir}/bird.json" \
     '{
       preflight: $preflight[0],
@@ -485,6 +505,7 @@ cmd_scan_context() {
       orders: $orders[0],
       portfolio: $portfolio[0],
       markets: $markets[0],
+      candidate_markets: $candidates[0],
       bird_queries: $bird[0]
     }'
 }
