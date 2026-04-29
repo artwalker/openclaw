@@ -431,6 +431,34 @@ tier confidence, and service-side risk controls. If Bird/X is unavailable, new
 entries are blocked; emergency close/reduce remains allowed when Axiom
 position/price/risk evidence itself justifies action.
 
+## Daily Review Cron Fix
+
+On 2026-04-29 UTC, `Axiom Daily Review` and `Polymarket Daily Review` failed
+after the MiMo migration with `Agent couldn't generate a response`. The root
+cause was review-job-specific tool restrictions plus prompts that asked MiMo to
+read files and run commands; MiMo emitted XML-style pseudo tool calls instead of
+real OpenClaw tool calls.
+
+VPS cron config was updated so both daily review jobs:
+
+- use `xiaomi-coding/mimo-v2.5-pro`;
+- remove the review-only `toolsAllow` restriction;
+- require a single first real process command:
+  - Axiom: `cd /root/.openclaw/workspace/skills/axiom-trade && bash scripts/axiom.sh scan-context 20`
+  - Polymarket: `cd /root/.openclaw/workspace/skills/polymarket && bash scripts/pm.sh scan-context 60`
+- keep cron `announce -> telegram:8436785488` delivery;
+- ban the message tool inside review jobs so meaningful review conclusions are
+  delivered once by cron announce, while no-conclusion reviews still return
+  exact `NO_REPLY`.
+
+Manual validation after the fix:
+
+```text
+Axiom Daily Review: status=ok, meaningful Chinese review delivered
+Polymarket Daily Review: status=ok, review completed without agent-generation error
+Current cron list: both daily review jobs status=ok, delivery=announce, model=mimo-v2.5-pro
+```
+
 ## Model policy
 
 All agent cron jobs now use MiMo as the primary model:
