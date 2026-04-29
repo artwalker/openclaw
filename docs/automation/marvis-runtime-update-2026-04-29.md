@@ -363,7 +363,9 @@ polymarket-market-scan cron prompt
 
 The Polymarket skill and cron prompt now explicitly say there are no category-level bans. Sports and NBA markets are allowed when the actual data supports a thesis. The model should reject markets because they fail real gates such as unclear resolution, expired trading window, missing token IDs, unavailable executable prices, insufficient liquidity, no edge, or safety limits, not because they are sports/NBA.
 
-X/Bird is auxiliary research, not an authority. Use `bird-x-intel` when public information matters, such as sports injuries, lineup news, political developments, or breaking-event markets. It must never be the sole reason to trade. The full-scan validation did not need X, so no bird query was made in that run.
+X/Bird is now required supporting research for every candidate trade judgment and material existing-position risk judgment. Candidate inspection should combine `pm.sh inspect` with targeted `bird search --json` context checks; open positions should also get targeted X context before hold/close/reduce judgments. X can surface sports injuries, lineup news, official statements, political developments, breaking-event confirmation, and sentiment shifts, but it must never be the sole reason to trade. If Bird/X credentials are unavailable, new entries are blocked; existing-position risk management may still close/reduce based on Polymarket evidence.
+
+`scripts/pm.sh scan-context` now gives the autonomous trader one baseline command for preflight, balance, positions, orders, portfolio, active markets, and targeted Bird/X searches for open positions plus the top market candidates. The cron prompt requires this command every run so the persistent session cannot reuse a previous scan's X results as fresh evidence.
 
 Manual validation after the fix:
 
@@ -374,7 +376,8 @@ message tool calls: none
 tool failures: 0
 open orders after scan: none
 open positions after scan: unchanged, AITC YES 7.0093 shares
-full scan: preflight, balance, positions, orders, portfolio, markets 30
+full scan: scan-context 30
+fresh Bird/X context: present for the AITC open position and top market candidates
 ```
 
 Final cron state after validation:

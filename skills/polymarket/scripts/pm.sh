@@ -35,6 +35,7 @@ Commands:
   geoblock                           Check Polymarket geoblock status
   markets                            List active high-volume markets (Gamma API)
   inspect <slug|market_id>           Inspect one market with normalized CLOB prices
+  scan-context [limit]                Full autonomous scan context plus targeted Bird/X searches
 USAGE
   exit 1
 }
@@ -402,6 +403,85 @@ cmd_portfolio() {
   curl -s "https://data-api.polymarket.com/positions?user=${addr}&sizeThreshold=0.1&limit=50"
 }
 
+bird_query_json() {
+  local query="$1"
+  if ! command -v bird >/dev/null 2>&1; then
+    ${JQ} -n --arg query "${query}" '{query: $query, ok: false, error: "bird CLI not found"}'
+    return
+  fi
+
+  local raw
+  raw=$(bird search --json -n 5 "${query}" 2>&1) || {
+    ${JQ} -n --arg query "${query}" --arg error "${raw}" '{query: $query, ok: false, error: $error}'
+    return
+  }
+
+  printf '%s' "${raw}" | ${JQ} --arg query "${query}" '
+    {
+      query: $query,
+      ok: true,
+      results: (if type == "array" then
+        [.[:5][] | {
+          text: ((.text // "") | tostring | .[0:500]),
+          createdAt: (.createdAt // ""),
+          author: (.author.username // .author.name // ""),
+          likeCount: (.likeCount // 0),
+          retweetCount: (.retweetCount // 0)
+        }]
+      else [] end)
+    }' 2>/dev/null || ${JQ} -n --arg query "${query}" '{query: $query, ok: false, error: "bird returned non-json"}'
+}
+
+cmd_scan_context() {
+  local limit="${1:-30}"
+  need_jq
+
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  trap 'rm -rf "${tmpdir}"' RETURN
+
+  cmd_preflight >"${tmpdir}/preflight.json"
+  cmd_balance >"${tmpdir}/balance.json"
+  cmd_positions >"${tmpdir}/positions.json"
+  cmd_orders >"${tmpdir}/orders.json"
+  cmd_portfolio >"${tmpdir}/portfolio.json"
+  cmd_markets "${limit}" >"${tmpdir}/markets.json"
+
+  {
+    ${JQ} -r '.[]? | (.title // .question // .slug // empty)' "${tmpdir}/positions.json"
+    ${JQ} -r '.[:3][]? | (.question // .slug // empty)' "${tmpdir}/markets.json"
+  } | sed '/^[[:space:]]*$/d' | awk '!seen[$0]++' | head -4 >"${tmpdir}/queries.txt"
+
+  printf '[' >"${tmpdir}/bird.json"
+  local first=1 query
+  while IFS= read -r query; do
+    if [[ "${first}" -eq 0 ]]; then
+      printf ',' >>"${tmpdir}/bird.json"
+    fi
+    first=0
+    bird_query_json "${query}" >>"${tmpdir}/bird.json"
+  done <"${tmpdir}/queries.txt"
+  printf ']' >>"${tmpdir}/bird.json"
+
+  ${JQ} -n \
+    --slurpfile preflight "${tmpdir}/preflight.json" \
+    --slurpfile balance "${tmpdir}/balance.json" \
+    --slurpfile positions "${tmpdir}/positions.json" \
+    --slurpfile orders "${tmpdir}/orders.json" \
+    --slurpfile portfolio "${tmpdir}/portfolio.json" \
+    --slurpfile markets "${tmpdir}/markets.json" \
+    --slurpfile bird "${tmpdir}/bird.json" \
+    '{
+      preflight: $preflight[0],
+      balance: $balance[0],
+      positions: $positions[0],
+      orders: $orders[0],
+      portfolio: $portfolio[0],
+      markets: $markets[0],
+      bird_queries: $bird[0]
+    }'
+}
+
 # === Dispatch ===
 
 case "${ACTION}" in
@@ -420,6 +500,7 @@ case "${ACTION}" in
   geoblock)   check_geoblock ;;
   markets)    cmd_markets "$@" ;;
   inspect)    cmd_inspect "$@" ;;
+  scan-context) cmd_scan_context "$@" ;;
   "")         usage ;;
   *)          echo "{\"error\":\"unknown command: ${ACTION}\"}" >&2; exit 1 ;;
 esac

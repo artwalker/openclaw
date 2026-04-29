@@ -9,7 +9,7 @@ metadata: { "openclaw": { "emoji": "🔮", "requires": { "bins": ["curl"] } } }
 
 Scan Polymarket for betting opportunities. Search markets, analyze probabilities, recommend picks. Optionally execute trades via `scripts/pm.sh`, which wraps Polymarket's official CLOB v2 client.
 
-This skill is trading-sensitive. Stay conservative. If external event context is needed, you may use `bird-x-intel` as an auxiliary signal only. Never treat X posts as a sufficient reason to trade by themselves.
+This skill is trading-sensitive. Stay conservative. Use the `bird` CLI as a required supporting intelligence source before making candidate trade judgments. Never treat X posts as a sufficient reason to trade by themselves.
 
 Response language: follow user's language.
 
@@ -26,10 +26,20 @@ real risk/data gate such as unclear resolution, expired trading window, missing
 token IDs, unavailable executable prices, insufficient liquidity, no identifiable
 edge, or safety-limit constraints.
 
-For markets where public information matters, including sports injuries, lineup
-news, political developments, and breaking-event markets, `bird-x-intel` can be
-used as auxiliary research. X/Twitter can help confirm timing and sentiment, but
-it must never be the sole reason to trade.
+Every candidate judgment and material existing-position risk judgment must include
+targeted `bird search --json` research. X/Twitter can surface injuries, lineup news,
+official statements, political developments, breaking-event confirmation, and
+sentiment shifts that Polymarket prices may react to. It must never be the sole
+reason to trade: the thesis still has to stand on market structure, liquidity,
+executable price, time to resolution, and clear resolution mechanics.
+
+In autonomous scans, an unchanged position or no-action conclusion is still a
+judgment. If there is any open position or any plausible candidate from
+`pm.sh markets`, run at least one targeted `bird search --json`
+query before deciding. A scan that makes a Polymarket judgment without touching
+X is incomplete; continue the scan instead of finalizing.
+
+If the `bird` CLI or its X credentials are unavailable, do not open new positions. Continue read-only scanning and existing-position risk management; close/reduce an existing position only when Polymarket position/price/risk evidence itself justifies it. Treat the missing X feed as an operational blocker for new entries and report it only when newly detected or changed.
 
 ## Runtime Isolation
 
@@ -43,7 +53,9 @@ Only these sources are authoritative for current objective state:
 - `scripts/pm.sh positions`
 - `scripts/pm.sh orders`
 - `scripts/pm.sh portfolio`
+- `scripts/pm.sh scan-context`
 - Fresh Polymarket Gamma/CLOB API responses
+- Targeted `bird search --json` searches for candidate/event context
 
 Never report or reason from Axiom status, crypto futures positions, BTC/USDC trades,
 Binance balances, USDT/USDC futures equity, Axiom service health, or any non-Polymarket
@@ -212,12 +224,15 @@ Autonomous/cron trading:
 
 ```
 Scheduled scan / prompt says autonomous trading scan / session key is polymarket-trader
-  → pm.sh preflight
+  → pm.sh scan-context
   → V2 client missing or wallet missing? → report only if this is a new operational blocker, otherwise NO_REPLY
   → geoblocked == true? → do not place orders; report once if newly detected, otherwise NO_REPLY
   → pUSD balance or allowance below safety floor? → stop opening new positions and report if newly detected
-  → Scan markets and current portfolio with pm.sh markets/portfolio
+  → Use scan-context markets, current portfolio, open orders, and Bird/X results as the baseline
   → Inspect any candidate with pm.sh inspect before deciding
+  → Run targeted `bird search --json` research for every candidate being judged
+  → Open position exists? → run targeted `bird search --json` research for the position/event before hold/close/reduce judgment
+  → bird unavailable? → no new positions; manage existing positions only
   → Clear thesis inside safety net and objective resolution? → execute via pm.sh without user confirmation
   → No clear thesis / no meaningful position change? → NO_REPLY
 ```
@@ -336,8 +351,9 @@ The only constraints:
 1. Stay within the safety net above
 2. Every decision must have a clear, articulable thesis
 3. Learn from your results — adapt your approach based on what works
-4. If you consult X/Twitter via `bird-x-intel`, treat it as supporting evidence only. A trade thesis must still stand on market structure, price, liquidity, timing, and resolution mechanics.
+4. Consult X/Twitter via `bird search --json` for every candidate trade judgment and material existing-position risk judgment, and treat it as supporting evidence only. A trade thesis must still stand on market structure, price, liquidity, timing, and resolution mechanics.
 5. Do not open new positions in expired markets, markets with missing token IDs, unavailable executable prices, unclear resolution criteria, or thin liquidity.
+6. Do not open new positions if `bird` is unavailable or unauthenticated; this blocks new entries, not emergency risk reduction.
 
 ### Cross-session memory
 
@@ -391,10 +407,7 @@ Before writing a review, refresh objective state:
 
 ```bash
 cd /root/.openclaw/workspace/skills/polymarket
-bash scripts/pm.sh preflight
-bash scripts/pm.sh balance
-bash scripts/pm.sh positions
-bash scripts/pm.sh orders
+bash scripts/pm.sh scan-context 30
 ```
 
 For daily reviews:
@@ -443,7 +456,7 @@ Valid: `NO_REPLY`
 2. **Manual mode: Never auto-execute trades** — every trade needs user typing "confirm".
    Exception: In autonomous/cron mode, trades execute automatically within safety net limits.
 3. **If CLI not installed** — operate in read-only mode, do not suggest installing unless user asks about trading
-4. **Do not use X posts as sole evidence** — social chatter can help with discovery and timing, but never replaces market, liquidity, and resolution analysis
+4. **Use X as required supporting context, never sole evidence** — every candidate trade judgment and material existing-position risk judgment needs targeted `bird search --json` research, but social chatter never replaces market, liquidity, and resolution analysis
 5. **Not financial advice** — frame as analysis
 6. **Volume threshold** — ignore < $10k 24h volume
 7. **Tail risk warning** — always warn on "捡硬币". 95% probability ≠ certainty.
