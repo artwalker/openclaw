@@ -329,7 +329,7 @@ All agent cron jobs now use MiMo as the primary model:
 
 ```text
 model: xiaomi-coding/mimo-v2.5-pro
-fallback: nvidia/minimaxai/minimax-m2.7 where configured
+fallbacks: none
 ```
 
-This includes Axiom, Polymarket, Bird X digest, Bird AI/Agent/Design digest, and daily/weekly review jobs. The Memory Dreaming Promotion job is a system event and has no model. Do not switch the primary model back to NVIDIA for routine cron work; `nvidia/z-ai/glm-5.1` was too slow on the VPS and contributed to delayed/stale cron scheduling.
+This includes Axiom, Polymarket, Bird X digest, Bird AI/Agent/Design digest, and daily/weekly review jobs. The Memory Dreaming Promotion job is a system event and has no model. Do not switch the primary model or fallback back to NVIDIA for routine cron work; `nvidia/z-ai/glm-5.1` was too slow on the VPS and contributed to delayed/stale cron scheduling.
