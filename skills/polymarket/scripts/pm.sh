@@ -2,6 +2,13 @@
 set -euo pipefail
 : "${HOME:=/root}"
 
+if [[ -f /root/.openclaw/.env ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  . /root/.openclaw/.env
+  set +a
+fi
+
 # === Config (override via env) ===
 PM_BIN="${PM_BIN:-$(command -v polymarket 2>/dev/null || true)}"
 PM_MAX_ORDER="${PM_MAX_ORDER:-3}"
