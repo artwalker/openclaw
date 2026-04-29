@@ -13,6 +13,24 @@ This skill is trading-sensitive. Stay conservative. If external event context is
 
 Response language: follow user's language.
 
+## Market Category Policy
+
+No market category is categorically banned. Sports, NBA, politics, crypto,
+macro, tech, entertainment, and long-tail markets may all be considered.
+
+The model should decide from the actual data: objective resolution criteria,
+liquidity, executable price, time to resolution, market structure, available
+external evidence, and thesis edge. Do not reject a market only because it is
+NBA, sports, or another broad category. Reject it only when the market fails a
+real risk/data gate such as unclear resolution, expired trading window, missing
+token IDs, unavailable executable prices, insufficient liquidity, no identifiable
+edge, or safety-limit constraints.
+
+For markets where public information matters, including sports injuries, lineup
+news, political developments, and breaking-event markets, `bird-x-intel` can be
+used as auxiliary research. X/Twitter can help confirm timing and sentiment, but
+it must never be the sole reason to trade.
+
 ## Runtime Isolation
 
 This skill is Polymarket-only. In autonomous scans, ignore global workspace memories,
@@ -198,8 +216,9 @@ Scheduled scan / prompt says autonomous trading scan / session key is polymarket
   → V2 client missing or wallet missing? → report only if this is a new operational blocker, otherwise NO_REPLY
   → geoblocked == true? → do not place orders; report once if newly detected, otherwise NO_REPLY
   → pUSD balance or allowance below safety floor? → stop opening new positions and report if newly detected
-  → Scan markets and current portfolio
-  → Clear thesis inside safety net? → execute via pm.sh without user confirmation
+  → Scan markets and current portfolio with pm.sh markets/portfolio
+  → Inspect any candidate with pm.sh inspect before deciding
+  → Clear thesis inside safety net and objective resolution? → execute via pm.sh without user confirmation
   → No clear thesis / no meaningful position change? → NO_REPLY
 ```
 
@@ -221,6 +240,7 @@ bash scripts/pm.sh approve-check                              # Same pUSD balanc
 bash scripts/pm.sh refresh-balance                            # Refresh CLOB v2 balance/allowance cache
 bash scripts/pm.sh geoblock                                   # Check Polymarket geoblock status
 bash scripts/pm.sh markets 30                                 # Robust active market scan; do not hand-write Gamma jq math
+bash scripts/pm.sh inspect <slug_or_market_id>                 # Normalized market detail + CLOB executable prices
 ```
 
 ### Market scan helper
@@ -231,7 +251,15 @@ For scheduled scans, prefer:
 cd /root/.openclaw/workspace/skills/polymarket && bash scripts/pm.sh markets 30
 ```
 
-Do not hand-write Gamma API `jq` math inside the agent turn. Gamma often returns numeric fields as strings; `pm.sh markets` normalizes them with `tonumber?`.
+Do not hand-write Gamma API `jq` math inside the agent turn. Gamma often returns numeric fields as strings; `pm.sh markets` normalizes them with `tonumber?` and filters out markets whose `endDate` is already in the past.
+
+Before opening or closing a thesis on a candidate, run:
+
+```bash
+cd /root/.openclaw/workspace/skills/polymarket && bash scripts/pm.sh inspect <slug_or_market_id>
+```
+
+Use `inspect` as the authoritative candidate detail check. It returns normalized market status, `days_to_end`, outcomes, token IDs, estimated executable buy/sell prices from CLOB, and resolution text. Do not open new positions when `new_order_allowed` is false, `days_to_end` is negative, token IDs are missing, executable prices are unavailable, or the resolution text is too vague to verify.
 
 ### Closing positions
 
@@ -309,6 +337,7 @@ The only constraints:
 2. Every decision must have a clear, articulable thesis
 3. Learn from your results — adapt your approach based on what works
 4. If you consult X/Twitter via `bird-x-intel`, treat it as supporting evidence only. A trade thesis must still stand on market structure, price, liquidity, timing, and resolution mechanics.
+5. Do not open new positions in expired markets, markets with missing token IDs, unavailable executable prices, unclear resolution criteria, or thin liquidity.
 
 ### Cross-session memory
 

@@ -344,6 +344,27 @@ polymarket-market-scan cron prompt
 
 The skill and cron prompt now state that Polymarket scans must ignore global workspace memory, short-term recall, Axiom status, crypto futures positions, BTC/USDC trades, Binance balances, USDT/USDC futures equity, Axiom service health, and any non-Polymarket memory. Objective current state may only come from `pm.sh preflight`, `pm.sh balance`, `pm.sh positions`, `pm.sh orders`, `pm.sh portfolio`, and fresh Polymarket Gamma/CLOB API responses.
 
+Follow-up Polymarket debugging found two more runtime-quality issues:
+
+- `pm.sh markets` could return high-volume markets whose `endDate` was already in the past, because Gamma still marked some of them `closed=false`.
+- The market-scan prompt was broad enough that the persistent trader session sometimes did a quick position/order check instead of a full market scan.
+
+Fixes applied:
+
+```text
+skills/polymarket/scripts/pm.sh
+skills/polymarket/SKILL.md
+/root/.openclaw/workspace/skills/polymarket/scripts/pm.sh
+/root/.openclaw/workspace/skills/polymarket/SKILL.md
+polymarket-market-scan cron prompt
+```
+
+`pm.sh markets` now filters out past-end-date markets and includes `days_to_end`. `pm.sh inspect <slug_or_market_id>` now returns normalized market status, token IDs, CLOB executable buy/sell prices, liquidity, spread, and resolution text so the agent does not hand-write Gamma/CLOB parsing before deciding.
+
+The Polymarket skill and cron prompt now explicitly say there are no category-level bans. Sports and NBA markets are allowed when the actual data supports a thesis. The model should reject markets because they fail real gates such as unclear resolution, expired trading window, missing token IDs, unavailable executable prices, insufficient liquidity, no edge, or safety limits, not because they are sports/NBA.
+
+X/Bird is auxiliary research, not an authority. Use `bird-x-intel` when public information matters, such as sports injuries, lineup news, political developments, or breaking-event markets. It must never be the sole reason to trade. The full-scan validation did not need X, so no bird query was made in that run.
+
 Manual validation after the fix:
 
 ```text
@@ -353,6 +374,7 @@ message tool calls: none
 tool failures: 0
 open orders after scan: none
 open positions after scan: unchanged, AITC YES 7.0093 shares
+full scan: preflight, balance, positions, orders, portfolio, markets 30
 ```
 
 Final cron state after validation:

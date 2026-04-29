@@ -34,6 +34,7 @@ Commands:
   trades                             List recent V2 CLOB trades
   geoblock                           Check Polymarket geoblock status
   markets                            List active high-volume markets (Gamma API)
+  inspect <slug|market_id>           Inspect one market with normalized CLOB prices
 USAGE
   exit 1
 }
@@ -287,18 +288,103 @@ cmd_trades() {
 cmd_markets() {
   local limit="${1:-30}"
   need_jq
+  local now_epoch
+  now_epoch=$(date -u +%s)
   curl -fsS "https://gamma-api.polymarket.com/markets?closed=false&order=volume24hr&ascending=false&limit=${limit}" \
-    | ${JQ} '[.[] | {
+    | ${JQ} --argjson now "${now_epoch}" '
+      def parsed_end_epoch:
+        ((.endDateIso // .endDate // "") | tostring) as $raw
+        | if $raw == "" then null
+          else (try ($raw | fromdateiso8601) catch (try (($raw + "T23:59:59Z") | fromdateiso8601) catch null))
+          end;
+      [.[] | parsed_end_epoch as $end_epoch
+        | select((.closed // false | not) and (.active // true) and ((.acceptingOrders // true) == true))
+        | select(($end_epoch == null) or ($end_epoch >= $now))
+        | {
         question: (.question // ""),
         slug: (.slug // ""),
-        end_date: ((.endDate // "") | tostring | .[0:10]),
+        end_date: (((.endDateIso // .endDate // "") | tostring) | .[0:10]),
+        days_to_end: (if $end_epoch == null then null else (((($end_epoch - $now) / 86400) * 100 | round) / 100) end),
         volume_24h: ((.volume24hr // .volume24h // 0) | tonumber? // 0),
         liquidity: ((.liquidity // 0) | tonumber? // 0),
+        closed: (.closed // false),
         outcome_prices: ((.outcomePrices // "[]") | if type == "string" then (fromjson? // []) else . end),
         clob_token_ids: ((.clobTokenIds // "[]") | if type == "string" then (fromjson? // []) else . end),
         active: (.active // true),
         accepting_orders: (.acceptingOrders // null)
       }]'
+}
+
+price_for() {
+  local token="$1"
+  local side="$2"
+  if [[ -z "${token}" || "${token}" == "null" ]]; then
+    echo ""
+    return
+  fi
+  curl -fsS "https://clob.polymarket.com/price?token_id=${token}&side=${side}" 2>/dev/null \
+    | ${JQ} -r '.price // empty' 2>/dev/null || true
+}
+
+cmd_inspect() {
+  local key="${1:?slug or market_id required}"
+  need_jq
+  local now_epoch url raw market token0 token1 buy0 sell0 buy1 sell1
+  now_epoch=$(date -u +%s)
+  if [[ "${key}" =~ ^[0-9]+$ ]]; then
+    url="https://gamma-api.polymarket.com/markets/${key}"
+  else
+    url="https://gamma-api.polymarket.com/markets?slug=${key}"
+  fi
+  raw=$(curl -fsS "${url}")
+  market=$(echo "${raw}" | ${JQ} 'if type == "array" then .[0] else . end')
+  if echo "${market}" | ${JQ} -e '. == null' >/dev/null; then
+    echo '{"error":"market not found"}' >&2
+    exit 4
+  fi
+  token0=$(echo "${market}" | ${JQ} -r '((.clobTokenIds // "[]") | if type == "string" then (fromjson? // []) else . end)[0] // empty')
+  token1=$(echo "${market}" | ${JQ} -r '((.clobTokenIds // "[]") | if type == "string" then (fromjson? // []) else . end)[1] // empty')
+  buy0=$(price_for "${token0}" BUY)
+  sell0=$(price_for "${token0}" SELL)
+  buy1=$(price_for "${token1}" BUY)
+  sell1=$(price_for "${token1}" SELL)
+  echo "${market}" | ${JQ} \
+    --argjson now "${now_epoch}" \
+    --arg buy0 "${buy0}" --arg sell0 "${sell0}" \
+    --arg buy1 "${buy1}" --arg sell1 "${sell1}" '
+      def parsed_json_array($value):
+        ($value // "[]") | if type == "string" then (fromjson? // []) else . end;
+      def parsed_end_epoch:
+        ((.endDateIso // .endDate // "") | tostring) as $raw
+        | if $raw == "" then null
+          else (try ($raw | fromdateiso8601) catch (try (($raw + "T23:59:59Z") | fromdateiso8601) catch null))
+          end;
+      parsed_end_epoch as $end_epoch
+      | {
+        id: (.id // ""),
+        question: (.question // ""),
+        slug: (.slug // ""),
+        end_date: (((.endDateIso // .endDate // "") | tostring) | .[0:10]),
+        days_to_end: (if $end_epoch == null then null else (((($end_epoch - $now) / 86400) * 100 | round) / 100) end),
+        closed: (.closed // false),
+        active: (.active // true),
+        accepting_orders: (.acceptingOrders // null),
+        new_order_allowed: ((.closed // false | not) and (.active // true) and ((.acceptingOrders // true) == true) and (($end_epoch == null) or ($end_epoch >= $now))),
+        volume_24h: ((.volume24hr // .volume24h // 0) | tonumber? // 0),
+        liquidity: ((.liquidity // 0) | tonumber? // 0),
+        best_bid: ((.bestBid // null) | tonumber?),
+        best_ask: ((.bestAsk // null) | tonumber?),
+        spread: ((.spread // null) | tonumber?),
+        outcomes: parsed_json_array(.outcomes),
+        outcome_prices: parsed_json_array(.outcomePrices),
+        clob_token_ids: parsed_json_array(.clobTokenIds),
+        executable_prices: {
+          outcome_0: { buy: ($buy0 | tonumber?), sell: ($sell0 | tonumber?) },
+          outcome_1: { buy: ($buy1 | tonumber?), sell: ($sell1 | tonumber?) }
+        },
+        description: (.description // ""),
+        resolution_source: (.resolutionSource // "")
+      }'
 }
 
 cmd_portfolio() {
@@ -333,6 +419,7 @@ case "${ACTION}" in
   refresh-balance) cmd_refresh_balance ;;
   geoblock)   check_geoblock ;;
   markets)    cmd_markets "$@" ;;
+  inspect)    cmd_inspect "$@" ;;
   "")         usage ;;
   *)          echo "{\"error\":\"unknown command: ${ACTION}\"}" >&2; exit 1 ;;
 esac
