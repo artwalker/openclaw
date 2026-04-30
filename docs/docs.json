@@ -1008,6 +1008,7 @@
                 "group": "Automation",
                 "pages": [
                   "automation/hooks",
+                  "automation/skill-integration-contract",
                   "automation/cron-jobs",
                   "automation/cron-vs-heartbeat",
                   "automation/troubleshooting",
