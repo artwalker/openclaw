@@ -11,6 +11,7 @@ if [[ -f /root/.openclaw/.env ]]; then
 fi
 
 AXIOM_URL="${AXIOM_URL:-http://localhost:8080}"
+BINANCE_FUTURES_URL="${BINANCE_FUTURES_URL:-https://fapi.binance.com}"
 AXIOMCTL="${AXIOMCTL:-$(command -v axiomctl 2>/dev/null || true)}"
 JQ="${JQ:-$(command -v jq 2>/dev/null || true)}"
 ACTION="${1:-}"
@@ -18,7 +19,7 @@ shift || true
 
 if [[ -n "${AXIOMCTL}" && -x "${AXIOMCTL}" ]]; then
   case "${ACTION}" in
-    preflight|symbols|screener|klines|market|regime|account|positions|execute|close)
+    preflight|symbols|klines|market|regime|account|positions|close)
       export AXIOM_URL
       exec "${AXIOMCTL}" "${ACTION}" "$@"
       ;;
@@ -74,6 +75,120 @@ curl_status() {
   rm -f "${body}"
 }
 
+truthy() {
+  case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|y|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+normalize_symbol() {
+  printf '%s' "${1:-}" | tr '[:lower:]' '[:upper:]' | tr -d '[:space:]'
+}
+
+fetch_exchange_info() {
+  curl -fsS "${BINANCE_FUTURES_URL}/fapi/v1/exchangeInfo"
+}
+
+contract_type_for_symbol() {
+  local symbol
+  symbol="$(normalize_symbol "${1:-}")"
+  if [[ -z "${symbol}" ]]; then
+    return 1
+  fi
+
+  fetch_exchange_info \
+    | ${JQ} -r --arg symbol "${symbol}" '.symbols[]? | select(.symbol == $symbol) | .contractType // empty' \
+    | head -1
+}
+
+symbol_in_list() {
+  local symbol list item
+  symbol="$(normalize_symbol "${1:-}")"
+  list="${2:-}"
+  while IFS= read -r item; do
+    if [[ "$(normalize_symbol "${item}")" == "${symbol}" ]]; then
+      return 0
+    fi
+  done < <(printf '%s\n' "${list}" | tr ',;[:space:]' '\n')
+  return 1
+}
+
+tradfi_open_allowed() {
+  local symbol
+  symbol="$(normalize_symbol "${1:-}")"
+  truthy "${AXIOM_ALLOW_TRADFI_PERP:-0}" && symbol_in_list "${symbol}" "${AXIOM_TRADFI_PERP_ALLOWLIST:-}"
+}
+
+reject_json() {
+  local symbol="${1:?symbol required}"
+  local action="${2:?action required}"
+  local error="${3:?error required}"
+  local message="${4:?message required}"
+  ${JQ} -n \
+    --arg symbol "${symbol}" \
+    --arg action "${action}" \
+    --arg error "${error}" \
+    --arg message "${message}" \
+    '{ok: false, result: "rejected", symbol: $symbol, action: $action, error: $error, message: $message}'
+}
+
+enforce_tradfi_open_guard() {
+  local symbol action contract_type
+  symbol="$(normalize_symbol "${1:-}")"
+  action="${2:-}"
+  case "${action}" in
+    open_long|open_short) ;;
+    *) return 0 ;;
+  esac
+
+  contract_type="$(contract_type_for_symbol "${symbol}" 2>/dev/null || true)"
+  if [[ -z "${contract_type}" ]]; then
+    reject_json "${symbol}" "${action}" "symbol_classification_unavailable" "Refusing to open because Binance contractType could not be verified"
+    return 1
+  fi
+
+  if [[ "${contract_type}" != "TRADIFI_PERPETUAL" ]]; then
+    return 0
+  fi
+
+  if tradfi_open_allowed "${symbol}"; then
+    return 0
+  fi
+
+  reject_json "${symbol}" "${action}" "tradfi_perpetual_disabled" "TRADIFI_PERPETUAL opens are disabled unless AXIOM_ALLOW_TRADFI_PERP=1 and the symbol is in AXIOM_TRADFI_PERP_ALLOWLIST"
+  return 1
+}
+
+filter_tradfi_screener() {
+  local screener_file="${1:?screener_file required}"
+  local exchange_file="${2:?exchange_file required}"
+  ${JQ} --slurpfile exchange "${exchange_file}" '
+    ($exchange[0] // {}) as $info
+    | (reduce (($info.symbols // [])[]?) as $s ({}; .[$s.symbol] = ($s.contractType // ""))) as $types
+    | [ .[]? | select(($types[.symbol] // "") != "TRADIFI_PERPETUAL") ]
+  ' "${screener_file}"
+}
+
+tradfi_exclusions() {
+  local screener_file="${1:?screener_file required}"
+  local exchange_file="${2:?exchange_file required}"
+  ${JQ} --slurpfile exchange "${exchange_file}" '
+    ($exchange[0] // {}) as $info
+    | (reduce (($info.symbols // [])[]?) as $s ({}; .[$s.symbol] = ($s.contractType // ""))) as $types
+    | [ .[]?
+        | select(($types[.symbol] // "") == "TRADIFI_PERPETUAL")
+        | {
+            symbol,
+            score,
+            price_change_24h,
+            contract_type: "TRADIFI_PERPETUAL",
+            reason: "tradfi_perpetual_disabled"
+          }
+      ]
+  ' "${screener_file}"
+}
+
 cmd_symbols() {
   local limit="${1:-30}"
   need_jq
@@ -81,11 +196,29 @@ cmd_symbols() {
     | ${JQ} --argjson limit "${limit}" 'if type == "array" then .[:$limit] elif (.data | type) == "array" then .data[:$limit] else . end'
 }
 
-cmd_screener() {
+cmd_screener_raw() {
   local limit="${1:-20}"
   need_jq
   curl -fsS "${AXIOM_URL}/api/screener?limit=${limit}" \
     | ${JQ} 'if (.data | type) == "array" then .data else . end'
+}
+
+cmd_screener() {
+  local limit="${1:-20}"
+  need_jq
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  trap 'rm -rf "${tmpdir}"' RETURN
+
+  if ! cmd_screener_raw "${limit}" >"${tmpdir}/screener.json"; then
+    return 1
+  fi
+  if ! fetch_exchange_info >"${tmpdir}/exchange-info.json"; then
+    ${JQ} -n '[]'
+    return 0
+  fi
+
+  filter_tradfi_screener "${tmpdir}/screener.json" "${tmpdir}/exchange-info.json"
 }
 
 cmd_klines() {
@@ -146,6 +279,10 @@ cmd_execute() {
   if [[ -z "${symbol}" || -z "${action}" || -z "${leverage}" || -z "${size_usd}" || -z "${stop_loss}" || -z "${take_profit}" || -z "${confidence}" || -z "${reasoning}" ]]; then
     echo '{"ok":false,"error":"usage: axiom.sh execute SYMBOL ACTION LEVERAGE SIZE_USD STOP_LOSS TAKE_PROFIT CONFIDENCE REASONING"}' >&2
     exit 2
+  fi
+
+  if ! enforce_tradfi_open_guard "${symbol}" "${action}"; then
+    return 0
   fi
 
   local payload
@@ -328,7 +465,20 @@ cmd_scan_context() {
   capture_json "${tmpdir}/preflight.json" preflight cmd_preflight
   capture_json "${tmpdir}/account.json" account cmd_account
   capture_json "${tmpdir}/positions.json" positions cmd_positions
-  capture_json "${tmpdir}/screener.json" screener cmd_screener "${limit}"
+  capture_json "${tmpdir}/raw-screener.json" screener cmd_screener_raw "${limit}"
+  capture_json "${tmpdir}/exchange-info.json" exchange_info fetch_exchange_info
+
+  if ${JQ} -e '.symbols | type == "array"' "${tmpdir}/exchange-info.json" >/dev/null 2>&1; then
+    filter_tradfi_screener "${tmpdir}/raw-screener.json" "${tmpdir}/exchange-info.json" >"${tmpdir}/screener.json"
+    tradfi_exclusions "${tmpdir}/raw-screener.json" "${tmpdir}/exchange-info.json" >"${tmpdir}/tradfi-exclusions.json"
+    ${JQ} -n \
+      --argjson excluded_count "$(${JQ} 'length' "${tmpdir}/tradfi-exclusions.json")" \
+      --slurpfile excluded "${tmpdir}/tradfi-exclusions.json" \
+      '{ok: true, policy: "disabled_by_default", excluded_count: $excluded_count, excluded: $excluded[0]}' >"${tmpdir}/tradfi-filter.json"
+  else
+    ${JQ} -n '[]' >"${tmpdir}/screener.json"
+    ${JQ} -n '{ok: false, policy: "fail_closed", error: "exchangeInfo unavailable; screener candidates suppressed to avoid TRADIFI_PERPETUAL bypass"}' >"${tmpdir}/tradfi-filter.json"
+  fi
 
   {
     printf '%s\n' BTCUSDT ETHUSDT
@@ -370,6 +520,7 @@ cmd_scan_context() {
     --slurpfile account "${tmpdir}/account.json" \
     --slurpfile positions "${tmpdir}/positions.json" \
     --slurpfile screener "${tmpdir}/screener.json" \
+    --slurpfile tradfi_filter "${tmpdir}/tradfi-filter.json" \
     --slurpfile markets "${tmpdir}/markets.json" \
     --slurpfile bird "${tmpdir}/bird.json" \
     '{
@@ -377,6 +528,7 @@ cmd_scan_context() {
       account: $account[0],
       positions: $positions[0],
       screener: $screener[0],
+      tradfi_filter: $tradfi_filter[0],
       market_summaries: $markets[0],
       bird_queries: $bird[0]
     }'

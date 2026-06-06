@@ -43,6 +43,21 @@ Altcoins returned by Axiom are valid candidates unless the service-side risk con
 
 Do not narrow the scan to BTC/ETH unless Axiom's API, current account state, or risk controls make the wider universe unavailable.
 
+### TradFi Perpetual Boundary
+
+Axiom autonomous trading is crypto-first. Binance `TRADIFI_PERPETUAL` symbols such as `HOODUSDT`, `NVDAUSDT`, `INTCUSDT`, `TSLAUSDT`, `XAUUSDT`, and `XAGUSDT` may be readable through futures market data, but they are not valid autonomous open candidates by default.
+
+`scan-context` filters `TRADIFI_PERPETUAL` out of the actionable screener list and reports exclusions under `tradfi_filter` for awareness. You may read these symbols with `market SYMBOL` for context, but do not submit `open_long` or `open_short` for them unless the operator has explicitly enabled both:
+
+```bash
+AXIOM_ALLOW_TRADFI_PERP=1
+AXIOM_TRADFI_PERP_ALLOWLIST=SYMBOL1,SYMBOL2
+```
+
+Closing an existing TradFi perpetual position remains allowed. Rescue exits must never be blocked by the candidate filter.
+
+Do not treat stock, metal, or ETF perpetuals as crypto altcoins. They require separate macro, equity, commodity, earnings, and session-liquidity analysis; Bird/X crypto-token searches are not enough. Until that separate strategy exists, TradFi perpetuals are observe-only.
+
 Use X/Twitter through the `bird` CLI as required supporting context for candidate
 trade judgments and material existing-position risk judgments. X can surface
 token-specific catalysts, exchange/listing news, security incidents, protocol or
@@ -67,13 +82,14 @@ For every autonomous market scan, follow this order:
 1. Run `bash scripts/axiom.sh scan-context 20`.
 2. If `account.ok=false` or `positions.ok=false`, do not open/close/size positions. Handle it only as an operational state change under the output rules.
 3. Use `scan-context` account, positions, screener, BTC/ETH anchor summaries, candidate market summaries, and Bird/X results as the baseline for this run.
-4. If a plausible candidate needs deeper inspection, run `bash scripts/axiom.sh market SYMBOL` again for that symbol and run a targeted `bird search --json -n 10 "<symbol or catalyst>"` query before deciding.
-5. Prefer candidates with liquidity, clear directional structure, non-contradictory funding/positioning, and fresh external context that does not conflict with the thesis.
-6. Use the returned 5m/15m/1h/4h summaries, RSI, ATR, ADX, Bollinger position, range position, taker buy ratio, screener context, computed regime, and fresh Bird/X context to form a thesis.
-7. Only consider a trade if the candidate has an independently clear setup after the deeper market check. Screener score alone is never enough.
-8. Calculate absolute SL/TP prices from current price plus ATR/range structure. Check R/R is >= 1.0 before submitting.
-9. For equity below 500 USDT, submit an order only at confidence >= 80. For equity >= 500 USDT, submit only at confidence >= 75. Confidence 70-79 is watchlist only, not execution.
-10. If no order is submitted and no reportable operational/risk event occurred, final output must be exactly `NO_REPLY`.
+4. Treat `tradfi_filter.excluded[]` as observe-only. Do not promote excluded TradFi perpetual symbols back into candidates.
+5. If a plausible crypto candidate needs deeper inspection, run `bash scripts/axiom.sh market SYMBOL` again for that symbol and run a targeted `bird search --json -n 10 "<symbol or catalyst>"` query before deciding.
+6. Prefer candidates with liquidity, clear directional structure, non-contradictory funding/positioning, and fresh external context that does not conflict with the thesis.
+7. Use the returned 5m/15m/1h/4h summaries, RSI, ATR, ADX, Bollinger position, range position, taker buy ratio, screener context, computed regime, and fresh Bird/X context to form a thesis.
+8. Only consider a trade if the candidate has an independently clear setup after the deeper market check. Screener score alone is never enough.
+9. Calculate absolute SL/TP prices from current price plus ATR/range structure. Check R/R is >= 1.0 before submitting.
+10. For equity below 500 USDT, submit an order only at confidence >= 80. For equity >= 500 USDT, submit only at confidence >= 75. Confidence 70-79 is watchlist only, not execution.
+11. If no order is submitted and no reportable operational/risk event occurred, final output must be exactly `NO_REPLY`.
 
 ### Candidate Interpretation
 
@@ -195,6 +211,7 @@ These are the defaults currently visible in Axiom's code path. Do not state that
 | ETH exchange minimum               | 20 USDT                                               | ETH orders below 20 rejected                 |
 | Min R/R safety floor               | ≥ 1.0                                                 | Negative-expectancy trades rejected          |
 | Min confidence                     | Nano/micro or equity <500: ≥ 80; standard: ≥ 75       | Lower-confidence opens must not be submitted |
+| TradFi perpetual opens             | Disabled unless env flag and symbol allowlist match   | Stock/metal/ETF perpetuals are observe-only  |
 | Daily loss circuit breaker         | -5% default                                           | Trading halted for 24h                       |
 | Max drawdown                       | -15% default                                          | Trading halted for 24h                       |
 | Consecutive-loss breaker           | 3 recent losses with at least one loss worse than -1% | Trading halted for 1h                        |
